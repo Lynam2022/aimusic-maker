@@ -15,7 +15,8 @@ import { prisma } from './db';
 // Giữ 1 browser instance alive để tránh cold start mỗi request
 let _browser: import('playwright-core').Browser | null = null;
 let _lastUsed = 0;
-const BROWSER_IDLE_TIMEOUT = 5 * 60 * 1000; // đóng browser sau 5 phút không dùng
+// Đóng sau 90 giây không dùng (Render free = 512MB, Chromium ~200MB, phải giải phóng sớm)
+const BROWSER_IDLE_TIMEOUT = 90 * 1000;
 
 // Queue đơn giản: chỉ 1 generate chạy tại một thời điểm (tránh OOM)
 let _generateQueue: Promise<unknown> = Promise.resolve();
@@ -73,15 +74,30 @@ async function getBrowser(): Promise<import('playwright-core').Browser> {
     args: [
       '--no-sandbox',
       '--disable-setuid-sandbox',
-      '--disable-dev-shm-usage',
+      '--disable-dev-shm-usage',        // dùng /tmp thay vì /dev/shm (quan trọng!)
       '--disable-accelerated-2d-canvas',
       '--no-first-run',
       '--no-zygote',
       '--disable-gpu',
+      '--disable-software-rasterizer',
       '--disable-background-timer-throttling',
       '--disable-backgrounding-occluded-windows',
       '--disable-renderer-backgrounding',
       '--disable-blink-features=AutomationControlled',
+      // Giảm RAM: limit renderer processes
+      '--renderer-process-limit=1',
+      '--max_old_space_size=128',
+      // Tắt features không cần
+      '--disable-extensions',
+      '--disable-plugins',
+      '--disable-sync',
+      '--disable-translate',
+      '--disable-web-security',         // cho phép CORS từ browser context
+      '--disable-features=TranslateUI,BlinkGenPropertyTrees,IsolateOrigins,site-per-process',
+      '--disable-default-apps',
+      '--mute-audio',
+      '--hide-scrollbars',
+      '--metrics-recording-only',
     ],
   });
 
@@ -178,10 +194,10 @@ async function _doGenerate(params: {
   const cookie = await getSunoCookie();
   const browser = await getBrowser();
 
-  // Tạo context mới với cookie inject
+  // Tạo context nhẹ: viewport nhỏ, block resource không cần thiết
   const context = await browser.newContext({
     userAgent: 'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/131.0.0.0 Safari/537.36',
-    viewport: { width: 1280, height: 900 },
+    viewport: { width: 800, height: 600 },   // nhỏ hơn → ít RAM hơn
     extraHTTPHeaders: {
       'Accept-Language': 'en-US,en;q=0.9',
     },
@@ -202,6 +218,16 @@ async function _doGenerate(params: {
   });
 
   const page = await context.newPage();
+
+  // Block tài nguyên không cần: images, media, fonts → tiết kiệm RAM và bandwidth
+  await page.route('**/*', (route) => {
+    const type = route.request().resourceType();
+    if (['image', 'media', 'font', 'stylesheet'].includes(type)) {
+      route.abort();
+    } else {
+      route.continue();
+    }
+  });
 
   try {
     // Mở suno.com/create để Turnstile có thể load đúng domain
