@@ -1,0 +1,11 @@
+services:
+  - type: web
+    name: aimusic-maker
+    runtime: node
+    buildCommand: bash render-build.sh
+    startCommand: npm start
+    envVars:
+      - key: NODE_ENV
+        value: production
+      - key: PLAYWRIGHT_BROWSERS_PATH
+        value: /opt/render/.cache/ms-playwright

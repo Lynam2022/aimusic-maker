@@ -1,0 +1,409 @@
+@import "tailwindcss";
+
+/* ═══════════════════════════════════════════════════════════════
+   THEME VARIABLES
+   ═══════════════════════════════════════════════════════════════ */
+
+:root,
+[data-theme="dark"] {
+  --bg-base:      #0b0b0e;
+  --bg-nav:       #111115cc;
+  --bg-card:      #141418;
+  --bg-secondary: #1a1a1f;
+  --bg-hover:     #232329;
+  --bg-input:     #1c1c22;
+  --border:       rgba(255,255,255,0.07);
+  --border-focus: var(--accent);
+  --text-primary:   #f1f1f3;
+  --text-secondary: #8b8b99;
+  --text-muted:     #52525e;
+  --accent:       #14b8a6;   /* teal-500 */
+  --accent-hover: #0ea5a0;
+  --accent-dim:   rgba(20,184,166,0.12);
+  --danger:       #f43f5e;
+  --success:      #10b981;
+  --warn:         #f59e0b;
+  --shadow-card:  0 4px 24px rgba(0,0,0,0.4);
+}
+
+[data-theme="light"] {
+  --bg-base:      #f8f8fc;
+  --bg-nav:       #ffffffd9;
+  --bg-card:      #ffffff;
+  --bg-secondary: #f0f0f6;
+  --bg-hover:     #e8e8f0;
+  --bg-input:     #f5f5fa;
+  --border:       rgba(0,0,0,0.08);
+  --border-focus: var(--accent);
+  --text-primary:   #111118;
+  --text-secondary: #52526a;
+  --text-muted:     #9898aa;
+  --accent:       #0ea5e9;   /* sky-500 in light mode */
+  --accent-hover: #0284c7;
+  --accent-dim:   rgba(14,165,233,0.10);
+  --danger:       #e11d48;
+  --success:      #059669;
+  --warn:         #d97706;
+  --shadow-card:  0 2px 12px rgba(0,0,0,0.08);
+}
+
+/* ═══════════════════════════════════════════════════════════════
+   BASE STYLES
+   ═══════════════════════════════════════════════════════════════ */
+
+*, *::before, *::after {
+  box-sizing: border-box;
+}
+
+html {
+  height: 100%;
+}
+
+body {
+  background: var(--bg-base);
+  color: var(--text-primary);
+  font-family: var(--font-geist-sans), -apple-system, BlinkMacSystemFont, 'Segoe UI', sans-serif;
+  height: 100%;
+  overflow: hidden;
+  transition: background 0.25s ease, color 0.25s ease;
+}
+
+/* Smooth theme transition for all elements */
+html {
+  transition: background-color 0.25s ease;
+}
+body, [class*="bg-["] {
+  transition: background-color 0.25s ease, border-color 0.25s ease, color 0.2s ease;
+}
+/* Exceptions: don't transition animations */
+.animate-spin, .animate-pulse, .animate-bounce, .animate-audio-bar {
+  transition: none !important;
+}
+
+[data-theme="light"] { color-scheme: light; }
+[data-theme="dark"]  { color-scheme: dark; }
+
+/* ═══════════════════════════════════════════════════════════════
+   AUDIO VISUALIZER ANIMATION
+   ═══════════════════════════════════════════════════════════════ */
+
+@keyframes audio-bar {
+  0%, 100% { transform: scaleY(0.25); }
+  50%       { transform: scaleY(1); }
+}
+.animate-audio-bar {
+  animation: audio-bar 0.8s ease-in-out infinite;
+  transform-origin: bottom;
+}
+
+/* ═══════════════════════════════════════════════════════════════
+   ENTRANCE ANIMATIONS
+   ═══════════════════════════════════════════════════════════════ */
+
+@keyframes fadeIn {
+  from { opacity: 0; }
+  to   { opacity: 1; }
+}
+.animate-fade-in { animation: fadeIn 0.2s ease-out forwards; }
+
+@keyframes slideDown {
+  from { transform: translateY(-8px); opacity: 0; }
+  to   { transform: translateY(0);    opacity: 1; }
+}
+.animate-slide-down { animation: slideDown 0.25s cubic-bezier(0.16,1,0.3,1) forwards; }
+
+@keyframes slideRight {
+  from { transform: translateX(-100%); }
+  to   { transform: translateX(0); }
+}
+.animate-slide-right { animation: slideRight 0.25s cubic-bezier(0.16,1,0.3,1) forwards; }
+
+@keyframes scaleUp {
+  from { transform: scale(0.96); opacity: 0; }
+  to   { transform: scale(1);    opacity: 1; }
+}
+.animate-scale-up { animation: scaleUp 0.25s cubic-bezier(0.16,1,0.3,1) forwards; }
+
+/* ═══════════════════════════════════════════════════════════════
+   CUSTOM & GLOBAL SCROLLBARS
+   ═══════════════════════════════════════════════════════════════ */
+
+/* Global scrollbar styling for standard elements (body, textareas, etc.) */
+::-webkit-scrollbar {
+  width: 6px;
+  height: 6px;
+}
+
+::-webkit-scrollbar-track {
+  background: transparent;
+}
+
+::-webkit-scrollbar-thumb {
+  background: var(--border);
+  border-radius: 9999px;
+  border: 1px solid transparent;
+  background-clip: padding-box;
+  transition: background-color 0.2s ease;
+}
+
+::-webkit-scrollbar-thumb:hover {
+  background: var(--text-muted);
+}
+
+/* Firefox compatibility */
+* {
+  scrollbar-width: thin;
+  scrollbar-color: var(--border) transparent;
+}
+
+/* Helper class for extra slim or custom containers */
+.custom-scrollbar::-webkit-scrollbar {
+  width: 5px;
+  height: 5px;
+}
+.custom-scrollbar::-webkit-scrollbar-track {
+  background: transparent;
+}
+.custom-scrollbar::-webkit-scrollbar-thumb {
+  background: var(--border);
+  border-radius: 9999px;
+}
+.custom-scrollbar::-webkit-scrollbar-thumb:hover {
+  background: var(--text-muted);
+}
+
+/* ═══════════════════════════════════════════════════════════════
+   RANGE INPUT (seek, volume, sliders)
+   ═══════════════════════════════════════════════════════════════ */
+
+input[type="range"] { 
+  -webkit-appearance: none; 
+  appearance: none; 
+  outline: none;
+  height: 6px;
+  border-radius: 9999px;
+  background: var(--bg-hover);
+  border: 1px solid var(--border);
+  cursor: pointer;
+}
+input[type="range"]::-webkit-slider-runnable-track {
+  height: 6px;
+  border-radius: 9999px;
+  border: none;
+}
+input[type="range"]::-moz-range-track {
+  height: 6px;
+  border-radius: 9999px;
+  border: none;
+}
+input[type="range"]::-webkit-slider-thumb {
+  -webkit-appearance: none;
+  appearance: none;
+  width: 13px;
+  height: 13px;
+  border-radius: 50%;
+  background: var(--accent);
+  margin-top: -3.5px;
+  cursor: pointer;
+  box-shadow: 0 1px 3px rgba(0, 0, 0, 0.25);
+  border: 2px solid #ffffff;
+  transition: transform 0.15s ease, box-shadow 0.15s ease;
+}
+input[type="range"]::-moz-range-thumb {
+  width: 13px;
+  height: 13px;
+  border-radius: 50%;
+  background: var(--accent);
+  cursor: pointer;
+  box-shadow: 0 1px 3px rgba(0, 0, 0, 0.25);
+  border: 2px solid #ffffff;
+  transition: transform 0.15s ease, box-shadow 0.15s ease;
+}
+input[type="range"]:hover::-webkit-slider-thumb {
+  transform: scale(1.15);
+  box-shadow: 0 0 0 3px var(--accent-dim);
+}
+
+/* ═══════════════════════════════════════════════════════════════
+   MOBILE RESPONSIVE
+   ═══════════════════════════════════════════════════════════════ */
+
+/* Hide right history panel on small screens */
+@media (max-width: 1024px) {
+  .right-panel-desktop { display: none; }
+}
+
+/* Stack panels vertically on mobile / use tabbed layout */
+@media (max-width: 768px) {
+  .app-layout {
+    flex-direction: row !important;
+    overflow: hidden !important;
+    height: calc(100dvh - 112px) !important; /* height minus top header (56px) and bottom nav (56px) */
+    position: relative !important;
+  }
+
+  .app-layout:has(.player-bar) {
+    height: calc(100dvh - 176px) !important; /* height minus header (56px), bottom nav (56px), and player bar (64px) */
+  }
+
+  /* Make panels take full screen width and height */
+  .left-panel,
+  .center-panel,
+  .right-panel-desktop {
+    width: 100vw !important;
+    height: 100% !important;
+    flex-shrink: 0 !important;
+    border: none !important;
+    max-width: none !important;
+  }
+
+  /* Show only the active tab panel, hide others */
+  .app-layout[data-active-tab="create"] .left-panel {
+    display: flex !important;
+  }
+  .app-layout:not([data-active-tab="create"]) .left-panel {
+    display: none !important;
+  }
+
+  .app-layout[data-active-tab="library"] .center-panel {
+    display: flex !important;
+  }
+  
+  /* Keep CenterPanel mounted but visually offscreen to keep audio playing */
+  .app-layout:not([data-active-tab="library"]) .center-panel {
+    display: flex !important;
+    position: absolute !important;
+    left: -9999px !important;
+    top: 0 !important;
+    width: 1px !important;
+    height: 1px !important;
+    overflow: hidden !important;
+  }
+
+  /* Hide center content when not on library tab */
+  .app-layout:not([data-active-tab="library"]) .center-panel-content {
+    display: none !important;
+  }
+
+  .app-layout[data-active-tab="details"] .right-panel-desktop {
+    display: flex !important;
+  }
+  .app-layout:not([data-active-tab="details"]) .right-panel-desktop {
+    display: none !important;
+  }
+
+  /* Style the player bar on mobile to be a sleek mini-player bar */
+  .player-bar {
+    position: fixed !important;
+    bottom: 56px !important;
+    left: 0 !important;
+    right: 0 !important;
+    width: 100vw !important;
+    height: 64px !important;
+    z-index: 40 !important;
+    padding: 0.5rem 1rem !important;
+    background: var(--bg-card) !important;
+    border-top: 1px solid var(--border) !important;
+    box-shadow: 0 -4px 12px rgba(0, 0, 0, 0.15) !important;
+    display: flex !important;
+    flex-direction: row !important;
+    align-items: center !important;
+    justify-content: space-between !important;
+    gap: 0.75rem !important;
+  }
+
+  /* ── Fix: Khi player bar active (fixed, bottom 56px, height 64px),
+     đẩy sticky credits footer lên để không bị che ── */
+  .app-layout:has(.player-bar) .mobile-credits-footer {
+    bottom: 64px !important;
+    /* đẩy sticky bottom từ 0 lên 64px để footer trượt ra trên player bar */
+  }
+
+  /* Seek line at top of mini player */
+  .player-bar::before {
+    content: '';
+    position: absolute;
+    top: 0;
+    left: 0;
+    height: 2px;
+    background: var(--accent);
+    width: var(--seek-percent, 0%);
+    transition: width 0.1s linear;
+  }
+
+  .player-bar-info {
+    width: auto !important;
+    max-width: 50% !important;
+    flex: 1 !important;
+  }
+
+  .player-bar-controls {
+    width: auto !important;
+    max-width: 45% !important;
+    flex: 1 !important;
+    gap: 0.25rem !important;
+  }
+
+  /* Hide timestamps and original progress bar range element on mobile */
+  .player-bar-controls span,
+  .player-bar-controls .relative.flex-1 {
+    display: none !important;
+  }
+
+  /* Hide volume controls on mobile */
+  .player-bar-volume {
+    display: none !important;
+  }
+
+  /* Extra mobile optimizations for narrow screens <= 480px */
+  @media (max-width: 480px) {
+    .center-panel-content .p-3 {
+      padding: 0.5rem 0.5rem !important;
+    }
+    .center-panel-content .space-y-3 {
+      margin-top: 0.25rem !important;
+    }
+    .center-panel-content .pills-pagination-row button {
+      padding-left: 0.5rem !important;
+      padding-right: 0.5rem !important;
+    }
+  }
+}
+
+/* ═══════════════════════════════════════════════════════════════
+   AUTH FORM STYLES
+   ═══════════════════════════════════════════════════════════════ */
+
+.auth-input {
+  width: 100%;
+  padding: 0.75rem 1rem;
+  border-radius: 0.75rem;
+  background: var(--bg-input);
+  border: 1px solid var(--border);
+  color: var(--text-primary);
+  font-size: 0.875rem;
+  outline: none;
+  transition: border-color 0.15s, box-shadow 0.15s;
+}
+.auth-input::placeholder { color: var(--text-muted); }
+.auth-input:focus {
+  border-color: var(--accent);
+  box-shadow: 0 0 0 3px var(--accent-dim);
+}
+
+.auth-btn-primary {
+  width: 100%;
+  padding: 0.75rem;
+  border-radius: 0.75rem;
+  background: var(--accent);
+  color: #000;
+  font-size: 0.875rem;
+  font-weight: 700;
+  border: none;
+  cursor: pointer;
+  transition: background 0.2s, transform 0.1s, box-shadow 0.2s;
+  box-shadow: 0 4px 16px var(--accent-dim);
+}
+.auth-btn-primary:hover { background: var(--accent-hover); box-shadow: 0 6px 24px var(--accent-dim); }
+.auth-btn-primary:active { transform: scale(0.98); }
+.auth-btn-primary:disabled { opacity: 0.5; cursor: not-allowed; transform: none; }

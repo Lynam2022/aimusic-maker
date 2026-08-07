@@ -1,0 +1,39 @@
+{
+  "name": "nhac-ai",
+  "version": "0.1.0",
+  "private": true,
+  "scripts": {
+    "dev": "next dev",
+    "build": "next build",
+    "start": "next start",
+    "lint": "eslint",
+    "postinstall": "playwright install chromium"
+  },
+  "dependencies": {
+    "@aws-sdk/client-s3": "^3.1076.0",
+    "@prisma/client": "^6.2.1",
+    "bcryptjs": "^3.0.3",
+    "ioredis": "^5.11.1",
+    "lucide-react": "^1.18.0",
+    "next": "16.2.9",
+    "next-auth": "^4.24.14",
+    "playwright-core": "^1.62.1",
+    "react": "19.2.4",
+    "react-dom": "19.2.4",
+    "undici": "^8.10.0",
+    "zustand": "^5.0.14"
+  },
+  "devDependencies": {
+    "@tailwindcss/postcss": "^4",
+    "@types/bcryptjs": "^2.4.6",
+    "@types/node": "^20",
+    "@types/react": "^19",
+    "@types/react-dom": "^19",
+    "eslint": "^9",
+    "eslint-config-next": "16.2.9",
+    "playwright": "^1.49.0",
+    "prisma": "^6.2.1",
+    "tailwindcss": "^4",
+    "typescript": "^5"
+  }
+}

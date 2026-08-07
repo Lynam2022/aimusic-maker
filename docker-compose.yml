@@ -1,0 +1,63 @@
+version: '3.8'
+
+services:
+  # ── PostgreSQL Database ──────────────────────────────────────
+  postgres:
+    image: postgres:16-alpine
+    container_name: nhacai_postgres
+    restart: unless-stopped
+    ports:
+      - "5432:5432"
+    environment:
+      POSTGRES_USER: nhacai
+      POSTGRES_PASSWORD: nhacai_secret_2024
+      POSTGRES_DB: nhacai_db
+    volumes:
+      - postgres_data:/var/lib/postgresql/data
+    healthcheck:
+      test: ["CMD-SHELL", "pg_isready -U nhacai -d nhacai_db"]
+      interval: 10s
+      timeout: 5s
+      retries: 5
+
+  # ── Redis Cache & Queue ──────────────────────────────────────
+  redis:
+    image: redis:7-alpine
+    container_name: nhacai_redis
+    restart: unless-stopped
+    ports:
+      - "6379:6379"
+    command: redis-server --appendonly yes --requirepass nhacai_redis_2024
+    volumes:
+      - redis_data:/data
+    healthcheck:
+      test: ["CMD", "redis-cli", "-a", "nhacai_redis_2024", "ping"]
+      interval: 10s
+      timeout: 5s
+      retries: 5
+
+  # ── Next.js Application ─────────────────────────────────────
+  app:
+    build:
+      context: .
+      dockerfile: Dockerfile
+    container_name: nhacai_app
+    restart: unless-stopped
+    ports:
+      - "3000:3000"
+    environment:
+      DATABASE_URL: postgresql://nhacai:nhacai_secret_2024@postgres:5432/nhacai_db
+      REDIS_URL: redis://:nhacai_redis_2024@redis:6379
+      NEXTAUTH_URL: http://localhost:3000
+      NEXTAUTH_SECRET: your-production-secret-change-this
+    depends_on:
+      postgres:
+        condition: service_healthy
+      redis:
+        condition: service_healthy
+    profiles:
+      - full  # Only start app container with: docker-compose --profile full up
+
+volumes:
+  postgres_data:
+  redis_data:
