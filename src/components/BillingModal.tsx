@@ -433,7 +433,7 @@ export default function BillingModal() {
                 <div className="space-y-4">
                   {/* Quick Select Buttons */}
                   <div className="grid grid-cols-4 gap-2">
-                    {[20000, 50000, 100000, 200000].map((amount) => (
+                    {[20000, 50000, 100000, 150000].map((amount) => (
                       <button
                         key={amount}
                         type="button"
