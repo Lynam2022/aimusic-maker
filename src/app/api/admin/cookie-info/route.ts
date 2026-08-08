@@ -92,6 +92,125 @@ function analyzeCookie(cookie: string) {
   };
 }
 
+/**
+ * Gọi Clerk API để lấy __session JWT mới, cập nhật vào DB.
+ * Điều kiện: __client còn hợp lệ (dùng làm Authorization).
+ */
+async function autoRefreshSessionInDB(cookie: string): Promise<{
+  refreshed: boolean;
+  newSessionExpiry?: string;
+  error?: string;
+}> {
+  try {
+    const ua = 'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/131.0.0.0 Safari/537.36';
+
+    // Lấy __client token để dùng làm Authorization
+    const clientMatch = cookie.match(/(?:^|;)\s*__client\s*=\s*([^;]+)/);
+    const clientToken = clientMatch ? clientMatch[1].trim() : null;
+
+    if (!clientToken) {
+      return {
+        refreshed: false,
+        error: '__client token không tồn tại trong cookie — cần Auto-Refresh bằng Playwright.',
+      };
+    }
+
+    const headers: Record<string, string> = {
+      'Cookie': cookie,
+      'User-Agent': ua,
+      'Origin': 'https://suno.com',
+      'Referer': 'https://suno.com/',
+      'Authorization': clientToken,
+      'accept': '*/*',
+      'sec-fetch-dest': 'empty',
+      'sec-fetch-mode': 'cors',
+      'sec-fetch-site': 'same-site',
+    };
+
+    // Thử auth.suno.com (mới) rồi fallback clerk.suno.com (cũ)
+    const endpoints = [
+      {
+        client: `https://auth.suno.com/v1/client?__clerk_api_version=2025-11-10&_clerk_js_version=5.117.0`,
+        token: (sid: string) =>
+          `https://auth.suno.com/v1/client/sessions/${sid}/tokens?__clerk_api_version=2025-11-10&_clerk_js_version=5.117.0`,
+        label: 'auth.suno.com',
+      },
+      {
+        client: `https://clerk.suno.com/v1/client?_clerk_js_version=4.73.2`,
+        token: (sid: string) =>
+          `https://clerk.suno.com/v1/client/sessions/${sid}/tokens?_clerk_js_version=4.73.2`,
+        label: 'clerk.suno.com',
+      },
+    ];
+
+    let jwt: string | null = null;
+    for (const ep of endpoints) {
+      try {
+        const clientRes = await fetch(ep.client, { headers });
+        if (!clientRes.ok) {
+          console.warn(`[CookieInfo] Clerk ${ep.label} client: ${clientRes.status}`);
+          continue;
+        }
+        const clientData = await clientRes.json();
+        const sessionId = clientData?.response?.last_active_session_id;
+        if (!sessionId) {
+          console.warn(`[CookieInfo] Clerk ${ep.label}: no active session_id`);
+          continue;
+        }
+
+        const tokenRes = await fetch(ep.token(sessionId), { method: 'POST', headers });
+        if (!tokenRes.ok) {
+          console.warn(`[CookieInfo] Clerk ${ep.label} token: ${tokenRes.status}`);
+          continue;
+        }
+        const tokenData = await tokenRes.json();
+        jwt = tokenData?.jwt || tokenData?.response?.jwt;
+        if (jwt) {
+          console.log(`[CookieInfo] ✅ Clerk refresh OK via ${ep.label}`);
+          break;
+        }
+      } catch (e) {
+        console.warn(`[CookieInfo] Clerk ${ep.label} error:`, e instanceof Error ? e.message : e);
+      }
+    }
+
+    if (!jwt) {
+      return {
+        refreshed: false,
+        error: 'Clerk refresh thất bại ở tất cả endpoints. __client có thể đã hết hạn — dùng nút Auto-Refresh (Playwright).',
+      };
+    }
+
+    // Build updated cookie: xóa __session cũ, thêm jwt mới vào đầu
+    let updatedCookie = cookie
+      .replace(/(?:^|;)\s*__session\s*=[^;]*/g, '')
+      .replace(/(?:^|;)\s*__session_[^=]+=?[^;]*/g, '')
+      .replace(/^;\s*/, '')
+      .replace(/;\s*;/g, ';')
+      .trim();
+    updatedCookie = `__session=${jwt}; ${updatedCookie}`;
+
+    // Lưu vào DB
+    await prisma.systemConfig.upsert({
+      where: { key: 'suno_cookie' },
+      update: { value: updatedCookie },
+      create: { key: 'suno_cookie', value: updatedCookie },
+    });
+
+    const newExpiry = parseJwtExpiry(jwt);
+    console.log(`[CookieInfo] ✅ __session saved to DB. New expiry: ${newExpiry?.toISOString()}`);
+
+    return {
+      refreshed: true,
+      newSessionExpiry: newExpiry?.toISOString() || undefined,
+    };
+  } catch (err) {
+    const msg = err instanceof Error ? err.message : String(err);
+    console.error('[CookieInfo] autoRefreshSessionInDB error:', msg);
+    return { refreshed: false, error: msg };
+  }
+}
+
 export async function GET() {
   try {
     const session = await getServerSession(authOptions);
@@ -99,7 +218,7 @@ export async function GET() {
       return NextResponse.json({ error: 'Không có quyền truy cập.' }, { status: 403 });
     }
 
-    // Get cookie from DB (priority: systemConfig > ENV)
+    // Lấy cookie từ DB (ưu tiên) hoặc ENV
     let cookieSource = 'none';
     let cookieValue = '';
 
@@ -112,13 +231,30 @@ export async function GET() {
       cookieSource = 'env';
     }
 
-    const info = analyzeCookie(cookieValue);
+    let info = analyzeCookie(cookieValue);
     const proxy = getProxyInfo();
+    let autoRefresh: { refreshed: boolean; newSessionExpiry?: string; error?: string } | null = null;
+
+    // ✨ Auto-refresh: Nếu __session hết hạn/thiếu nhưng __client còn OK → refresh qua Clerk API
+    if (cookieValue && info && !info.sessionOk && info.hasClient && info.clientOk) {
+      console.log('[CookieInfo] __session expired/missing but __client valid → auto-refreshing via Clerk...');
+      autoRefresh = await autoRefreshSessionInDB(cookieValue);
+
+      if (autoRefresh.refreshed) {
+        // Re-read cookie mới từ DB
+        const updatedConfig = await prisma.systemConfig.findUnique({ where: { key: 'suno_cookie' } });
+        if (updatedConfig?.value) {
+          cookieValue = updatedConfig.value;
+          info = analyzeCookie(cookieValue);
+        }
+      }
+    }
 
     return NextResponse.json({
       source: cookieSource,
       info: info || { isSet: false, totalLength: 0 },
       proxy,
+      autoRefresh,
     });
   } catch (error: unknown) {
     const message = error instanceof Error ? error.message : 'Internal Server Error';
