@@ -529,17 +529,48 @@ export class SunoClient {
       const jwt = await refreshPromise;
       return jwt;
     } catch (err: unknown) {
+      const errMsg = err instanceof Error ? err.message : 'Unknown error';
+
+      // Fallback: thử dùng __session cũ nếu còn hạn
       const sessionToken = this.parseSessionToken(cookie);
       if (sessionToken) {
-        console.warn('[SunoCookie] Clerk refresh failed, using cached __session as fallback.');
         const exp = this.getJwtExpiry(sessionToken);
-        const expiresAt = exp > Date.now() ? exp : Date.now() + 5 * 60 * 1000;
-        this.jwtCache.set(cookie, { jwt: sessionToken, expiresAt });
-        return sessionToken;
+        if (exp > Date.now() + 30000) {
+          console.warn('[SunoCookie] Clerk refresh failed, using cached __session as fallback. Error:', errMsg);
+          this.jwtCache.set(cookie, { jwt: sessionToken, expiresAt: exp });
+          return sessionToken;
+        }
       }
 
-      const errMsg = err instanceof Error ? err.message : 'Unknown error';
-      throw new Error(`Không thể lấy token xác thực mới từ Suno. (${errMsg})`);
+      // Phát hiện session bị revoke (Suno đăng xuất hoặc cookie hết hạn hoàn toàn)
+      const isSessionRevoked = errMsg.includes('No active session') || errMsg.includes('401') || errMsg.includes('Unauthorized');
+      if (isSessionRevoked) {
+        // Trigger Playwright refresh trong background (non-blocking)
+        console.warn('[SunoCookie] Session revoked/expired — triggering background Playwright cookie refresh...');
+        Promise.resolve().then(async () => {
+          try {
+            const { refreshCookieViaPlaywright } = await import('./suno-playwright');
+            const result = await refreshCookieViaPlaywright();
+            if (result.success) {
+              console.log('[SunoCookie] ✅ Background Playwright refresh succeeded. Cookie updated in DB.');
+              // Clear cache để request tiếp theo dùng cookie mới
+              this.jwtCache.clear();
+            } else {
+              console.warn('[SunoCookie] Background Playwright refresh failed:', result.message);
+            }
+          } catch (e) {
+            console.warn('[SunoCookie] Background Playwright refresh error:', e instanceof Error ? e.message : e);
+          }
+        }).catch(() => {});
+
+        throw new Error(
+          'Hệ thống Suno đang tạm thời gián đoạn do phiên đăng nhập hết hạn. ' +
+          'Hệ thống đang tự động làm mới — vui lòng thử lại sau 30 giây. ' +
+          'Nếu lỗi tiếp tục, admin vui lòng nhấn nút Auto-Refresh trong trang /admin.'
+        );
+      }
+
+      throw new Error(`Không thể lấy token xác thực từ Suno. Vui lòng thử lại hoặc liên hệ admin. (${errMsg})`);
     } finally {
       this.pendingRefreshes.delete(cookie);
     }
