@@ -392,3 +392,143 @@ async function _doGenerate(params: {
     _lastUsed = Date.now();
   }
 }
+
+/**
+ * Refresh Suno Cookie bằng Playwright CDP.
+ * CDP (Chrome DevTools Protocol) có thể đọc TOÀN BỘ cookie kể cả HttpOnly.
+ * 
+ * Quy trình:
+ * 1. Inject cookie hiện tại từ DB vào browser context
+ * 2. Mở suno.com/create để Clerk refresh session tự động
+ * 3. Chờ Clerk sẵn sàng (session active)
+ * 4. Dùng CDP "Network.getAllCookies" để lấy toàn bộ cookie (kể cả HttpOnly)
+ * 5. Build lại cookie string và lưu vào DB
+ */
+export async function refreshCookieViaPlaywright(): Promise<{
+  success: boolean;
+  cookieLen: number;
+  hasClient: boolean;
+  hasSession: boolean;
+  sessionExpire?: string;
+  message: string;
+}> {
+  const startMs = Date.now();
+  console.log('[CookieRefresh] Starting Playwright CDP cookie refresh...');
+
+  let cookie: string;
+  try {
+    cookie = await getSunoCookie();
+  } catch {
+    return { success: false, cookieLen: 0, hasClient: false, hasSession: false, message: 'Chưa có cookie trong DB.' };
+  }
+
+  const { chromium } = await import('playwright-core');
+  const execPath = getChromiumPath();
+
+  // Launch browser riêng (không dùng pool singleton vì cần CDP access)
+  const browser = await chromium.launch({
+    executablePath: execPath,
+    headless: true,
+    args: [
+      '--no-sandbox', '--disable-setuid-sandbox', '--disable-dev-shm-usage',
+      '--disable-gpu', '--no-zygote', '--renderer-process-limit=1',
+      '--disable-extensions', '--disable-plugins', '--mute-audio',
+    ],
+  });
+
+  try {
+    const context = await browser.newContext({
+      userAgent: 'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/131.0.0.0 Safari/537.36',
+      viewport: { width: 800, height: 600 },
+    });
+
+    // Inject cookies hiện tại
+    const cookies = parseCookieString(cookie);
+    if (cookies.length > 0) {
+      await context.addCookies(cookies);
+    }
+
+    await context.addInitScript(() => {
+      Object.defineProperty(navigator, 'webdriver', { get: () => undefined });
+    });
+
+    const page = await context.newPage();
+
+    // Block images/media để tiết kiệm RAM
+    await page.route('**/*', (route) => {
+      const type = route.request().resourceType();
+      if (['image', 'media', 'font', 'stylesheet'].includes(type)) route.abort();
+      else route.continue();
+    });
+
+    // Mở suno.com để Clerk tự refresh session
+    console.log('[CookieRefresh] Opening suno.com/create...');
+    await page.goto('https://suno.com/create', { waitUntil: 'domcontentloaded', timeout: 30000 });
+
+    // Chờ Clerk load và refresh session
+    await page.waitForFunction(() => {
+      // eslint-disable-next-line @typescript-eslint/no-explicit-any
+      return !!(window as any).Clerk?.session;
+    }, { timeout: 20000 }).catch(() => {
+      console.warn('[CookieRefresh] Clerk not ready, trying anyway...');
+    });
+
+    // Thêm 3 giây để Clerk refresh token
+    await page.waitForTimeout(3000);
+
+    // === CDP: Lấy toàn bộ cookie kể cả HttpOnly ===
+    const cdpSession = await context.newCDPSession(page);
+    const { cookies: allCookies } = await cdpSession.send('Network.getAllCookies') as {
+      cookies: Array<{
+        name: string; value: string; domain: string; path: string;
+        expires: number; httpOnly: boolean; secure: boolean; sameSite?: string;
+      }>
+    };
+
+    // Lọc cookie của suno.com và auth.suno.com
+    const sunoCookies = allCookies.filter(c =>
+      c.domain.includes('suno.com') && c.value && c.value.length > 0
+    );
+
+    console.log(`[CookieRefresh] CDP found ${sunoCookies.length} suno cookies`);
+
+    // Build cookie string (key=value; key=value; ...)
+    const newCookieStr = sunoCookies.map(c => `${c.name}=${c.value}`).join('; ');
+
+    const hasClient = sunoCookies.some(c => c.name === '__client');
+    const hasSession = sunoCookies.some(c => c.name === '__session');
+    const sessionCookie = sunoCookies.find(c => c.name === '__session');
+
+    console.log(`[CookieRefresh] hasClient=${hasClient}, hasSession=${hasSession}, totalLen=${newCookieStr.length}`);
+
+    if (newCookieStr.length > 0) {
+      // Lưu vào DB
+      await prisma.systemConfig.upsert({
+        where: { key: 'suno_cookie' },
+        update: { value: newCookieStr },
+        create: { key: 'suno_cookie', value: newCookieStr },
+      });
+      console.log('[CookieRefresh] ✅ Cookie saved to DB!');
+    }
+
+    const elapsed = Date.now() - startMs;
+    let sessionExpire: string | undefined;
+    if (sessionCookie?.expires && sessionCookie.expires > 0) {
+      sessionExpire = new Date(sessionCookie.expires * 1000).toISOString();
+    }
+
+    return {
+      success: newCookieStr.length > 0,
+      cookieLen: newCookieStr.length,
+      hasClient,
+      hasSession,
+      sessionExpire,
+      message: newCookieStr.length > 0
+        ? `✅ Đã refresh cookie (${newCookieStr.length} ký tự, elapsed: ${elapsed}ms)`
+        : '⚠️ Không lấy được cookie mới từ Playwright',
+    };
+
+  } finally {
+    try { await browser.close(); } catch { /* ignore */ }
+  }
+}

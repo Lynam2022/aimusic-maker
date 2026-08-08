@@ -180,6 +180,7 @@ export default function AdminDashboard() {
   // Cookie info state
   const [cookieInfo, setCookieInfo] = useState<any>(null);
   const [cookieEditing, setCookieEditing] = useState(false);
+  const [refreshingCookie, setRefreshingCookie] = useState(false);
 
   useEffect(() => {
     if (status === 'unauthenticated') {
@@ -986,14 +987,43 @@ export default function AdminDashboard() {
                   <div className="space-y-1.5">
                     <div className="flex items-center justify-between">
                       <label className="text-[11px] font-bold text-[var(--text-secondary)]">SUNO COOKIE (Dùng làm tài khoản chung nếu user không liên kết cookie riêng)</label>
-                      <button
-                        type="button"
-                        onClick={() => { setCookieEditing(!cookieEditing); if (!cookieEditing) fetchCookieInfo(); }}
-                        className="flex items-center gap-1 text-[10px] px-2 py-1 rounded-lg bg-[var(--accent)]/10 text-[var(--accent)] hover:bg-[var(--accent)]/20 transition-all font-semibold"
-                      >
-                        <Info className="h-3 w-3" />
-                        {cookieEditing ? 'Xem thông tin' : 'Cập nhật cookie'}
-                      </button>
+                      <div className="flex items-center gap-1.5">
+                        {/* Nút Auto-Refresh Cookie qua Playwright CDP */}
+                        <button
+                          type="button"
+                          disabled={refreshingCookie}
+                          onClick={async () => {
+                            setRefreshingCookie(true);
+                            setCookieInfo(null);
+                            try {
+                              const res = await fetch('/api/admin/refresh-cookie', { method: 'POST' });
+                              const data = await res.json();
+                              if (data.success) {
+                                alert(`✅ Refresh cookie thành công!\n${data.message}\nhasClient: ${data.hasClient}, hasSession: ${data.hasSession}`);
+                                fetchCookieInfo();
+                              } else {
+                                alert(`❌ Lỗi refresh cookie:\n${data.message || data.error}`);
+                              }
+                            } catch (e: any) {
+                              alert('❌ Lỗi kết nối: ' + e.message);
+                            } finally {
+                              setRefreshingCookie(false);
+                            }
+                          }}
+                          className="flex items-center gap-1 text-[10px] px-2 py-1 rounded-lg bg-green-500/10 text-green-400 hover:bg-green-500/20 transition-all font-semibold disabled:opacity-50 disabled:cursor-wait"
+                        >
+                          <RefreshCw className={`h-3 w-3 ${refreshingCookie ? 'animate-spin' : ''}`} />
+                          {refreshingCookie ? 'Đang refresh...' : 'Auto-Refresh'}
+                        </button>
+                        <button
+                          type="button"
+                          onClick={() => { setCookieEditing(!cookieEditing); if (!cookieEditing) fetchCookieInfo(); }}
+                          className="flex items-center gap-1 text-[10px] px-2 py-1 rounded-lg bg-[var(--accent)]/10 text-[var(--accent)] hover:bg-[var(--accent)]/20 transition-all font-semibold"
+                        >
+                          <Info className="h-3 w-3" />
+                          {cookieEditing ? 'Xem thông tin' : 'Cập nhật cookie'}
+                        </button>
+                      </div>
                     </div>
 
                     {/* Cookie Info Panel */}
